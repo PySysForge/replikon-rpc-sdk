@@ -1,0 +1,68 @@
+{
+  "name": "replikon-rpc-sdk",
+  "version": "0.1.0",
+  "description": "Thin TypeScript client for the Replikon read-RPC network for Solana, with local proof-of-serve receipt verification.",
+  "license": "MIT",
+  "author": "Replikon",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "RECEIPT_FORMAT.md",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "keywords": [
+    "solana",
+    "rpc",
+    "read-rpc",
+    "replikon",
+    "repl",
+    "depin",
+    "proof-of-serve",
+    "web3"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PySysForge/replikon-rpc-sdk.git"
+  },
+  "bugs": {
+    "url": "https://github.com/PySysForge/replikon-rpc-sdk/issues"
+  },
+  "homepage": "https://github.com/PySysForge/replikon-rpc-sdk#readme",
+  "dependencies": {
+    "@noble/curves": "^1.6.0",
+    "@noble/hashes": "^1.5.0",
+    "bs58": "^6.0.0"
+  },
+  "devDependencies": {
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
