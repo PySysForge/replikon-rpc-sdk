@@ -1,5 +1,15 @@
 # replikon-rpc-sdk
 
+<p>
+  <a href="https://www.npmjs.com/package/replikon-rpc-sdk"><img src="https://img.shields.io/npm/v/replikon-rpc-sdk?style=flat-square&color=CB3837&label=npm&logo=npm&logoColor=white" alt="npm version"></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="license"></a>
+  <img src="https://img.shields.io/badge/node-%3E%3D18-3C873A?style=flat-square&logo=node.js&logoColor=white" alt="node >=18">
+  <img src="https://img.shields.io/badge/types-TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="typescript">
+  <img src="https://img.shields.io/badge/Solana-mainnet--beta-9945FF?style=flat-square&logo=solana&logoColor=white" alt="solana">
+  <img src="https://img.shields.io/badge/proof--of--serve-ed25519-5B5BD6?style=flat-square" alt="proof-of-serve ed25519">
+  <img src="https://img.shields.io/badge/bundle-ESM%20%2B%20CJS-F7DF1E?style=flat-square" alt="ESM + CJS">
+</p>
+
 Thin TypeScript client for **Replikon** — the read-RPC network for Solana — with
 **local proof-of-serve receipt verification**. Every read can return a node-signed
 receipt that you verify yourself, offline, without trusting the gateway.
