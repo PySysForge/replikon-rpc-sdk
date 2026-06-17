@@ -5,6 +5,13 @@ All notable changes to `replikon-rpc-sdk` are documented here. This project foll
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-06-17
+
+### Changed
+
+- Docs: added status badges (npm, license, node, TypeScript, Solana, proof-of-serve,
+  bundle) to the README. No code changes.
+
 ## [0.1.0] - 2026-06-16
 
 ### Added
