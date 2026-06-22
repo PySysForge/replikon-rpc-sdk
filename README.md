@@ -14,6 +14,8 @@ Thin TypeScript client for **Replikon** — the read-RPC network for Solana — 
 **local proof-of-serve receipt verification**. Every read can return a node-signed
 receipt that you verify yourself, offline, without trusting the gateway.
 
+**Mint address:** ```26mnPK3ZvbVXnusLxJEQVVJf3WeahkQe8c3rHRSUpump```
+
 > `$REPL` is a utility/access token. Holding $REPL raises your rate-limit tier on the
 > Replikon endpoint and SDK. It is not an investment and confers no yield.
 

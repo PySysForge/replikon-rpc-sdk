@@ -5,6 +5,12 @@ All notable changes to `replikon-rpc-sdk` are documented here. This project foll
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-06-22
+
+### Changed
+
+- Docs: added the `$REPL` mint address to the README. No code changes.
+
 ## [0.1.1] - 2026-06-17
 
 ### Changed
