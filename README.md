@@ -91,6 +91,27 @@ import { verifyReceipt } from "replikon-rpc-sdk";
 const { valid } = verifyReceipt(receipt, { result, slot }, knownNodes);
 ```
 
+## Timeouts & cancellation
+
+Don't let a slow gateway hang your process. Set a client-wide timeout, override it per
+call, or cancel in-flight requests with an `AbortSignal`:
+
+```ts
+// Abort any request that takes longer than 5s.
+const repl = new ReplikonClient({ endpoint: "https://gateway.replikon.xyz", timeoutMs: 5000 });
+
+// Override the timeout for a single call.
+await repl.getSlot({ timeoutMs: 1500 });
+
+// Cancel manually (e.g. when a user navigates away).
+const ac = new AbortController();
+const p = repl.getBalance(address, { signal: ac.signal });
+ac.abort();
+```
+
+A timeout throws a `ReplikonRpcError` with `code === 408`; an external `signal` abort
+rejects with the usual `AbortError`.
+
 ## License
 
 MIT

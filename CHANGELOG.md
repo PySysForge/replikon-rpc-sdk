@@ -5,6 +5,16 @@ All notable changes to `replikon-rpc-sdk` are documented here. This project foll
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-22
+
+### Added
+
+- Request timeouts — pass `timeoutMs` to the client (or per call) to abort a slow
+  gateway instead of hanging forever. A timeout throws `ReplikonRpcError` with
+  `code === 408`.
+- Cancellation — every read method and `call()` now accept an `AbortSignal` via
+  `signal`, so in-flight requests can be cancelled. New `RequestControl` type.
+
 ## [0.1.2] - 2026-06-22
 
 ### Changed

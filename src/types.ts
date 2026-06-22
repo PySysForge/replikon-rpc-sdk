@@ -56,6 +56,14 @@ export interface VerifyResult {
   nodeKnownSkipped: boolean;
 }
 
+/** Per-request transport controls, accepted by every read method and `call()`. */
+export interface RequestControl {
+  /** Abort the request with an AbortSignal (e.g. an AbortController or AbortSignal.timeout). */
+  signal?: AbortSignal;
+  /** Per-request timeout in milliseconds; overrides the client-level `timeoutMs`. */
+  timeoutMs?: number;
+}
+
 export interface ReplikonClientOptions {
   /** Gateway base URL, e.g. https://gateway.replikon.xyz */
   endpoint: string;
@@ -67,6 +75,8 @@ export interface ReplikonClientOptions {
   fetch?: typeof fetch;
   /** Default commitment for requests that don't specify one. */
   commitment?: Commitment;
+  /** Abort any request that takes longer than this many ms (default: no timeout). */
+  timeoutMs?: number;
 }
 
 export class ReplikonRpcError extends Error {

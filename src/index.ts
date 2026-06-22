@@ -13,4 +13,5 @@ export {
   type ReceiptChecks,
   type VerifyResult,
   type ReplikonClientOptions,
+  type RequestControl,
 } from "./types.js";
