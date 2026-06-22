@@ -5,6 +5,15 @@ All notable changes to `replikon-rpc-sdk` are documented here. This project foll
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-22
+
+### Added
+
+- `client.useTrustedNodesFromGateway()` — discovers the gateway's live serving-node
+  pubkey (via `/health`) and adds it to the trusted set, so `verify()` actually
+  enforces the `nodeKnown` layer instead of skipping it.
+- `client.trustedNodes` getter — inspect the currently trusted node pubkeys.
+
 ## [0.3.0] - 2026-06-22
 
 ### Added

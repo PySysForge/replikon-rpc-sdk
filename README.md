@@ -65,6 +65,14 @@ const repl = new ReplikonClient({
 });
 ```
 
+Or let the SDK discover the gateway's serving-node key for you — this turns on the
+`nodeKnown` layer (which is otherwise skipped until you supply a node set):
+
+```ts
+await repl.useTrustedNodesFromGateway(); // reads /health, populates the trusted set
+console.log(repl.trustedNodes);          // ["<base58 node pubkey>"]
+```
+
 ## Supported methods
 
 Read subset of the Solana JSON-RPC interface:

@@ -33,7 +33,7 @@ interface JsonRpcEnvelope {
 export class ReplikonClient {
   private readonly endpoint: string;
   private readonly apiKey?: string;
-  private readonly knownNodes?: string[];
+  private knownNodes?: string[];
   private readonly fetchImpl: typeof fetch;
   private readonly defaultCommitment?: Commitment;
   private readonly timeoutMs?: number;
@@ -59,6 +59,11 @@ export class ReplikonClient {
     this.fetchImpl = f.bind(globalThis);
   }
 
+  /** The node pubkeys currently trusted by `verify()`'s `nodeKnown` layer. */
+  get trustedNodes(): readonly string[] {
+    return this.knownNodes ?? [];
+  }
+
   /**
    * Low-level JSON-RPC call returning the full Replikon envelope.
    * Transient failures (HTTP 429, 5xx, network) are retried; pass `control` to set a
@@ -69,18 +74,98 @@ export class ReplikonClient {
     params: unknown[] = [],
     control?: RequestControl,
   ): Promise<ReplikonResponse<T>> {
+    return this.runWithRetry(() => this.attemptCall<T>(method, params, control), control);
+  }
+
+  /**
+   * Discover the gateway's live serving-node key and add it to the trusted set, so
+   * `verify()` actually enforces the `nodeKnown` layer (skipped until a node set exists).
+   * Returns the resulting trusted-node list. The simulated mesh nodes never sign real
+   * answers, so they are intentionally excluded — only the real `/health` signer is added.
+   */
+  async useTrustedNodesFromGateway(control?: RequestControl): Promise<string[]> {
+    return this.runWithRetry(async () => {
+      const pubkey = await this.fetchHealthPubkey(control);
+      if (pubkey) {
+        this.knownNodes = [...new Set([...(this.knownNodes ?? []), pubkey])];
+      }
+      return this.knownNodes ?? [];
+    }, control);
+  }
+
+  /** Verify a receipt locally against its response (offline). */
+  verify(
+    receipt: NonNullable<ReplikonResponse["receipt"]>,
+    response: Pick<ReplikonResponse, "result" | "slot">,
+  ): VerifyResult {
+    return verifyReceipt(receipt, response, this.knownNodes);
+  }
+
+  // ---- Solana read subset (TZ scope) -------------------------------------
+
+  getSlot(opts?: { commitment?: Commitment } & RequestControl): Promise<ReplikonResponse<number>> {
+    const { signal, timeoutMs, retries, ...rpc } = opts ?? {};
+    return this.call<number>("getSlot", [this.cfg(rpc)], { signal, timeoutMs, retries });
+  }
+
+  getBalance(
+    address: string,
+    opts?: { commitment?: Commitment } & RequestControl,
+  ): Promise<ReplikonResponse<{ context: { slot: number }; value: number }>> {
+    const { signal, timeoutMs, retries, ...rpc } = opts ?? {};
+    return this.call("getBalance", [address, this.cfg(rpc)], { signal, timeoutMs, retries });
+  }
+
+  getAccountInfo(
+    address: string,
+    opts?: { commitment?: Commitment; encoding?: string } & RequestControl,
+  ): Promise<ReplikonResponse> {
+    const { signal, timeoutMs, retries, ...rpc } = opts ?? {};
+    return this.call(
+      "getAccountInfo",
+      [address, this.cfg({ encoding: "base64", ...rpc })],
+      { signal, timeoutMs, retries },
+    );
+  }
+
+  getMultipleAccounts(
+    addresses: string[],
+    opts?: { commitment?: Commitment; encoding?: string } & RequestControl,
+  ): Promise<ReplikonResponse> {
+    const { signal, timeoutMs, retries, ...rpc } = opts ?? {};
+    return this.call(
+      "getMultipleAccounts",
+      [addresses, this.cfg({ encoding: "base64", ...rpc })],
+      { signal, timeoutMs, retries },
+    );
+  }
+
+  getTokenAccountsByOwner(
+    owner: string,
+    filter: { mint: string } | { programId: string },
+    opts?: { commitment?: Commitment; encoding?: string } & RequestControl,
+  ): Promise<ReplikonResponse> {
+    const { signal, timeoutMs, retries, ...rpc } = opts ?? {};
+    return this.call(
+      "getTokenAccountsByOwner",
+      [owner, filter, this.cfg({ encoding: "jsonParsed", ...rpc })],
+      { signal, timeoutMs, retries },
+    );
+  }
+
+  // ---- internals ---------------------------------------------------------
+
+  /** Run `fn`, retrying transient failures with backoff (shared by call + discovery). */
+  private async runWithRetry<T>(fn: () => Promise<T>, control?: RequestControl): Promise<T> {
     const retries = control?.retries ?? this.retries;
     const external = control?.signal;
     let attempt = 0;
-
     for (;;) {
       try {
-        return await this.attemptCall<T>(method, params, control);
+        return await fn();
       } catch (err) {
-        // Stop immediately on caller cancellation, exhausted retries, or a permanent error.
         if (external?.aborted || attempt >= retries || !isRetryable(err)) throw err;
-        const waitMs = retryAfterMsOf(err) ?? backoffMs(attempt, this.retryBaseMs);
-        await sleep(waitMs, external);
+        await sleep(retryAfterMsOf(err) ?? backoffMs(attempt, this.retryBaseMs), external);
         attempt++;
       }
     }
@@ -144,64 +229,35 @@ export class ReplikonClient {
     }
   }
 
-  /** Verify a receipt locally against its response (offline). */
-  verify(
-    receipt: NonNullable<ReplikonResponse["receipt"]>,
-    response: Pick<ReplikonResponse, "result" | "slot">,
-  ): VerifyResult {
-    return verifyReceipt(receipt, response, this.knownNodes);
-  }
-
-  // ---- Solana read subset (TZ scope) -------------------------------------
-
-  getSlot(opts?: { commitment?: Commitment } & RequestControl): Promise<ReplikonResponse<number>> {
-    const { signal, timeoutMs, retries, ...rpc } = opts ?? {};
-    return this.call<number>("getSlot", [this.cfg(rpc)], { signal, timeoutMs, retries });
-  }
-
-  getBalance(
-    address: string,
-    opts?: { commitment?: Commitment } & RequestControl,
-  ): Promise<ReplikonResponse<{ context: { slot: number }; value: number }>> {
-    const { signal, timeoutMs, retries, ...rpc } = opts ?? {};
-    return this.call("getBalance", [address, this.cfg(rpc)], { signal, timeoutMs, retries });
-  }
-
-  getAccountInfo(
-    address: string,
-    opts?: { commitment?: Commitment; encoding?: string } & RequestControl,
-  ): Promise<ReplikonResponse> {
-    const { signal, timeoutMs, retries, ...rpc } = opts ?? {};
-    return this.call(
-      "getAccountInfo",
-      [address, this.cfg({ encoding: "base64", ...rpc })],
-      { signal, timeoutMs, retries },
-    );
-  }
-
-  getMultipleAccounts(
-    addresses: string[],
-    opts?: { commitment?: Commitment; encoding?: string } & RequestControl,
-  ): Promise<ReplikonResponse> {
-    const { signal, timeoutMs, retries, ...rpc } = opts ?? {};
-    return this.call(
-      "getMultipleAccounts",
-      [addresses, this.cfg({ encoding: "base64", ...rpc })],
-      { signal, timeoutMs, retries },
-    );
-  }
-
-  getTokenAccountsByOwner(
-    owner: string,
-    filter: { mint: string } | { programId: string },
-    opts?: { commitment?: Commitment; encoding?: string } & RequestControl,
-  ): Promise<ReplikonResponse> {
-    const { signal, timeoutMs, retries, ...rpc } = opts ?? {};
-    return this.call(
-      "getTokenAccountsByOwner",
-      [owner, filter, this.cfg({ encoding: "jsonParsed", ...rpc })],
-      { signal, timeoutMs, retries },
-    );
+  /** GET the gateway's /health and return its serving-node pubkey (with timeout/cancel). */
+  private async fetchHealthPubkey(control?: RequestControl): Promise<string | undefined> {
+    const timeoutMs = control?.timeoutMs ?? this.timeoutMs;
+    const deadline = armTimeout(control?.signal, timeoutMs);
+    try {
+      const res = await this.fetchImpl(`${this.endpoint}/health`, {
+        method: "GET",
+        headers: { accept: "application/json" },
+        signal: deadline.signal,
+      });
+      if (!res.ok) {
+        const err = new ReplikonRpcError(
+          `Replikon gateway HTTP ${res.status}`,
+          res.status,
+          await safeText(res),
+        );
+        err.retryAfterMs = parseRetryAfter(res.headers.get("retry-after"));
+        throw err;
+      }
+      const body = (await res.json()) as { pubkey?: string };
+      return typeof body?.pubkey === "string" ? body.pubkey : undefined;
+    } catch (err) {
+      if (deadline.timedOut()) {
+        throw new ReplikonRpcError(`Replikon request timed out after ${timeoutMs}ms`, 408);
+      }
+      throw err;
+    } finally {
+      deadline.clear();
+    }
   }
 
   private cfg<T extends object>(opts?: T): T & { commitment?: Commitment } {

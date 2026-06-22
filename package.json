@@ -1,6 +1,6 @@
 {
   "name": "replikon-rpc-sdk",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Thin TypeScript client for the Replikon read-RPC network for Solana, with local proof-of-serve receipt verification.",
   "license": "MIT",
   "author": "Replikon",
