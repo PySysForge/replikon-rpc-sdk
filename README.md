@@ -112,6 +112,24 @@ ac.abort();
 A timeout throws a `ReplikonRpcError` with `code === 408`; an external `signal` abort
 rejects with the usual `AbortError`.
 
+## Retries
+
+Reads are idempotent, so the client retries transient failures automatically — HTTP
+`429` (rate-limited), `5xx`, and network errors — with exponential backoff and jitter.
+A `Retry-After` header is honored when present. It defaults to 2 retries (3 attempts):
+
+```ts
+const repl = new ReplikonClient({
+  endpoint: "https://gateway.replikon.xyz",
+  retries: 4,        // up to 5 attempts
+  retryBaseMs: 250,  // backoff base
+});
+
+await repl.getSlot({ retries: 0 }); // opt out for a single call
+```
+
+Permanent errors (`4xx` other than `429`, JSON-RPC errors) and timeouts are not retried.
+
 ## License
 
 MIT

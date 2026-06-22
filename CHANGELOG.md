@@ -5,6 +5,15 @@ All notable changes to `replikon-rpc-sdk` are documented here. This project foll
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-22
+
+### Added
+
+- Automatic retries for transient failures (HTTP 429, 5xx, network errors) with
+  exponential backoff + jitter; honors `Retry-After`. Configurable via `retries` /
+  `retryBaseMs` (client) or `retries` per call. Defaults to 2 retries.
+- `ReplikonRpcError.retryAfterMs` — server-advised wait parsed from `Retry-After`.
+
 ## [0.2.0] - 2026-06-22
 
 ### Added

@@ -62,6 +62,8 @@ export interface RequestControl {
   signal?: AbortSignal;
   /** Per-request timeout in milliseconds; overrides the client-level `timeoutMs`. */
   timeoutMs?: number;
+  /** Max retry attempts for this request; overrides the client-level `retries`. */
+  retries?: number;
 }
 
 export interface ReplikonClientOptions {
@@ -77,11 +79,20 @@ export interface ReplikonClientOptions {
   commitment?: Commitment;
   /** Abort any request that takes longer than this many ms (default: no timeout). */
   timeoutMs?: number;
+  /**
+   * Retry transient failures (HTTP 429, 5xx, and network errors) this many times.
+   * Reads are idempotent, so this is safe. Default: 2 (i.e. up to 3 attempts).
+   */
+  retries?: number;
+  /** Base backoff in ms for retries; grows exponentially with jitter. Default: 300. */
+  retryBaseMs?: number;
 }
 
 export class ReplikonRpcError extends Error {
   code: number;
   data?: unknown;
+  /** Server-advised wait before retrying, parsed from a `Retry-After` header (ms). */
+  retryAfterMs?: number;
   constructor(message: string, code: number, data?: unknown) {
     super(message);
     this.name = "ReplikonRpcError";

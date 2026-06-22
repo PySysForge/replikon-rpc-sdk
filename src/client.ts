@@ -37,6 +37,8 @@ export class ReplikonClient {
   private readonly fetchImpl: typeof fetch;
   private readonly defaultCommitment?: Commitment;
   private readonly timeoutMs?: number;
+  private readonly retries: number;
+  private readonly retryBaseMs: number;
   private idCounter = 0;
 
   constructor(opts: ReplikonClientOptions) {
@@ -46,6 +48,8 @@ export class ReplikonClient {
     this.knownNodes = opts.knownNodes;
     this.defaultCommitment = opts.commitment;
     this.timeoutMs = opts.timeoutMs;
+    this.retries = opts.retries ?? 2;
+    this.retryBaseMs = opts.retryBaseMs ?? 300;
     const f = opts.fetch ?? globalThis.fetch;
     if (!f) {
       throw new Error(
@@ -57,11 +61,35 @@ export class ReplikonClient {
 
   /**
    * Low-level JSON-RPC call returning the full Replikon envelope.
-   * Pass `control` to set a per-request `signal` (cancellation) or `timeoutMs`.
+   * Transient failures (HTTP 429, 5xx, network) are retried; pass `control` to set a
+   * per-request `signal` (cancellation), `timeoutMs`, or `retries`.
    */
   async call<T = unknown>(
     method: string,
     params: unknown[] = [],
+    control?: RequestControl,
+  ): Promise<ReplikonResponse<T>> {
+    const retries = control?.retries ?? this.retries;
+    const external = control?.signal;
+    let attempt = 0;
+
+    for (;;) {
+      try {
+        return await this.attemptCall<T>(method, params, control);
+      } catch (err) {
+        // Stop immediately on caller cancellation, exhausted retries, or a permanent error.
+        if (external?.aborted || attempt >= retries || !isRetryable(err)) throw err;
+        const waitMs = retryAfterMsOf(err) ?? backoffMs(attempt, this.retryBaseMs);
+        await sleep(waitMs, external);
+        attempt++;
+      }
+    }
+  }
+
+  /** A single JSON-RPC attempt (no retries) with timeout + cancellation. */
+  private async attemptCall<T>(
+    method: string,
+    params: unknown[],
     control?: RequestControl,
   ): Promise<ReplikonResponse<T>> {
     const id = ++this.idCounter;
@@ -82,11 +110,13 @@ export class ReplikonClient {
       });
 
       if (!res.ok) {
-        throw new ReplikonRpcError(
+        const err = new ReplikonRpcError(
           `Replikon gateway HTTP ${res.status}`,
           res.status,
           await safeText(res),
         );
+        err.retryAfterMs = parseRetryAfter(res.headers.get("retry-after"));
+        throw err;
       }
 
       const body = (await res.json()) as JsonRpcEnvelope;
@@ -125,27 +155,27 @@ export class ReplikonClient {
   // ---- Solana read subset (TZ scope) -------------------------------------
 
   getSlot(opts?: { commitment?: Commitment } & RequestControl): Promise<ReplikonResponse<number>> {
-    const { signal, timeoutMs, ...rpc } = opts ?? {};
-    return this.call<number>("getSlot", [this.cfg(rpc)], { signal, timeoutMs });
+    const { signal, timeoutMs, retries, ...rpc } = opts ?? {};
+    return this.call<number>("getSlot", [this.cfg(rpc)], { signal, timeoutMs, retries });
   }
 
   getBalance(
     address: string,
     opts?: { commitment?: Commitment } & RequestControl,
   ): Promise<ReplikonResponse<{ context: { slot: number }; value: number }>> {
-    const { signal, timeoutMs, ...rpc } = opts ?? {};
-    return this.call("getBalance", [address, this.cfg(rpc)], { signal, timeoutMs });
+    const { signal, timeoutMs, retries, ...rpc } = opts ?? {};
+    return this.call("getBalance", [address, this.cfg(rpc)], { signal, timeoutMs, retries });
   }
 
   getAccountInfo(
     address: string,
     opts?: { commitment?: Commitment; encoding?: string } & RequestControl,
   ): Promise<ReplikonResponse> {
-    const { signal, timeoutMs, ...rpc } = opts ?? {};
+    const { signal, timeoutMs, retries, ...rpc } = opts ?? {};
     return this.call(
       "getAccountInfo",
       [address, this.cfg({ encoding: "base64", ...rpc })],
-      { signal, timeoutMs },
+      { signal, timeoutMs, retries },
     );
   }
 
@@ -153,11 +183,11 @@ export class ReplikonClient {
     addresses: string[],
     opts?: { commitment?: Commitment; encoding?: string } & RequestControl,
   ): Promise<ReplikonResponse> {
-    const { signal, timeoutMs, ...rpc } = opts ?? {};
+    const { signal, timeoutMs, retries, ...rpc } = opts ?? {};
     return this.call(
       "getMultipleAccounts",
       [addresses, this.cfg({ encoding: "base64", ...rpc })],
-      { signal, timeoutMs },
+      { signal, timeoutMs, retries },
     );
   }
 
@@ -166,11 +196,11 @@ export class ReplikonClient {
     filter: { mint: string } | { programId: string },
     opts?: { commitment?: Commitment; encoding?: string } & RequestControl,
   ): Promise<ReplikonResponse> {
-    const { signal, timeoutMs, ...rpc } = opts ?? {};
+    const { signal, timeoutMs, retries, ...rpc } = opts ?? {};
     return this.call(
       "getTokenAccountsByOwner",
       [owner, filter, this.cfg({ encoding: "jsonParsed", ...rpc })],
-      { signal, timeoutMs },
+      { signal, timeoutMs, retries },
     );
   }
 
@@ -179,6 +209,53 @@ export class ReplikonClient {
       this.defaultCommitment;
     return { ...(opts as T), ...(commitment ? { commitment } : {}) };
   }
+}
+
+/** Transient failures worth retrying for an idempotent read. */
+function isRetryable(err: unknown): boolean {
+  if (err instanceof ReplikonRpcError) {
+    return err.code === 429 || (err.code >= 500 && err.code <= 599);
+  }
+  // Network-level errors (fetch rejected). Not our timeout/abort (already typed above).
+  return (err as { name?: string })?.name !== "AbortError";
+}
+
+function retryAfterMsOf(err: unknown): number | undefined {
+  return err instanceof ReplikonRpcError ? err.retryAfterMs : undefined;
+}
+
+/** Exponential backoff with full jitter, capped at 10s. */
+function backoffMs(attempt: number, base: number): number {
+  const exp = Math.min(base * 2 ** attempt, 10_000);
+  return exp / 2 + Math.random() * (exp / 2);
+}
+
+/** Parse a `Retry-After` header: delta-seconds or an HTTP date. */
+function parseRetryAfter(header: string | null): number | undefined {
+  if (!header) return undefined;
+  const secs = Number(header);
+  if (Number.isFinite(secs)) return Math.max(0, secs * 1000);
+  const dateMs = Date.parse(header);
+  if (Number.isFinite(dateMs)) return Math.max(0, dateMs - Date.now());
+  return undefined;
+}
+
+/** Resolve after `ms`, or reject early if `signal` aborts. */
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason ?? new DOMException("aborted", "AbortError"));
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    if (signal) {
+      if (signal.aborted) return onAbort();
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
+  });
 }
 
 /**
